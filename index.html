@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dolanan Tembak-Tembakan V2</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; touch-action: none; }
+        canvas { display: block; background-image: url('background.jpg'); background-size: cover; background-position: center; }
+        
+        #ui { position: absolute; top: 15px; left: 15px; color: #00fdfd; font-size: 25px; pointer-events: none; text-shadow: 3px 3px #000; z-index: 10; }
+        
+        #startMenu {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-image: url('start menu.jpg'); background-size: cover; background-position: center;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            color: white; text-align: center; z-index: 20; padding: 20px; box-sizing: border-box;
+        }
+        .start-btn {
+            padding: 15px 40px; font-size: 24px; background: #fffe61; color: #000; 
+            border: none; cursor: pointer; font-weight: bold; margin-top: 20px; border-radius: 5px;
+        }
+
+        .controls { position: absolute; bottom: 30px; width: 100%; display: flex; justify-content: space-between; padding: 0 40px; box-sizing: border-box; }
+        .btn { width: 70px; height: 70px; background: rgba(255, 255, 255, 0.2); border: 2px solid #fff; border-radius: 50%; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; user-select: none; -webkit-tap-highlight-color: transparent; font-size: 30px; }
+    </style>
+</head>
+<body>
+
+<div id="startMenu">
+    <h1 style="color: #f00;">ONE PIECE DARDERDOR</h1>
+    <p><b>Tutore Dek:</b></p>
+    <ul style="text-align: left; list-style: none; padding: 0;">
+        <li>1. Tombol ◀ ▶ nggo gerak</li>
+        <li>2. Tembak musuh sing kakehan polah</li>
+        <li>3. Aja nganti nyawane entok!</li>
+        <li>4. Nyawamu 3 tok</li>
+    </ul>
+    <button class="start-btn" onclick="startGame()">YOSHH!!</button>
+</div>
+
+<div id="ui">
+    MATENI: <span id="score">0</span><br>
+    NYAWAMU: <span id="hp">3</span>
+</div>
+
+<div class="controls">
+    <div class="btn" id="leftBtn">◀</div>
+    <div class="btn" id="rightBtn">▶</div>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+const scoreEl = document.getElementById("score");
+const hpEl = document.getElementById("hp");
+const startMenu = document.getElementById("startMenu");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// --- KONFIGURASI GAMBAR ---
+const playerImg = new Image();
+playerImg.src = 'kapal.png'; // Ganti link gambar pesawatmu neng kene
+
+const enemyImg = new Image();
+enemyImg.src = 'kapal enemy.png'; // Ganti link gambar musuhmu neng kene
+
+// --- AUDIO SYSTEM ---
+let audioCtx; 
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+
+function playSound(freq, type, duration, vol = 0.1) {
+    if (!audioCtx) return;
+    try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    } catch(e) {}
+}
+
+// --- VARIABEL GAME ---
+let score = 0;
+let health = 3;
+let gameOver = false;
+let gameStarted = false;
+let moveLeft = false;
+let moveRight = false;
+
+const player = { x: canvas.width / 2 - 25, y: canvas.height - 150, w: 80, h: 120, speed: 7 };
+const bullets = [];
+const enemyBullets = [];
+const enemies = [];
+
+// --- KONTROL ---
+document.getElementById("leftBtn").ontouchstart = (e) => { e.preventDefault(); moveLeft = true; };
+document.getElementById("leftBtn").ontouchend = () => moveLeft = false;
+document.getElementById("rightBtn").ontouchstart = (e) => { e.preventDefault(); moveRight = true; };
+document.getElementById("rightBtn").ontouchend = () => moveRight = false;
+
+function startGame() {
+    initAudio();
+    gameStarted = true;
+    startMenu.style.display = "none";
+    
+    setInterval(autoFire, 450);
+    spawnEnemy();
+    setInterval(enemyFire, 700);
+    
+    draw();
+}
+
+function autoFire() {
+    if (!gameOver && gameStarted) {
+        bullets.push({ x: player.x + player.w/2 - 3, y: player.y, w: 6, h: 15 });
+        playSound(440, 'square', 0.1, 0.05);
+    }
+}
+
+function spawnEnemy() {
+    if (!gameOver && gameStarted && enemies.length < 6) {
+        enemies.push({
+            x: Math.random() * (canvas.width - 50),
+            y: -60,
+            targetY: 50 + Math.random() * 200,
+            w: 60,
+            h: 100,
+            speedX: (Math.random() > 0.5 ? 2.5 : -2.5),
+            state: 'descending'
+        });
+    }
+    if (!gameOver) setTimeout(spawnEnemy, 500);
+}
+
+function enemyFire() {
+    if (gameOver || !gameStarted) return;
+    enemies.forEach(en => {
+        if (en.state === 'strafing') {
+            enemyBullets.push({ x: en.x + en.w/2, y: en.y + en.h, w: 5, h: 12 });
+            playSound(150, 'sine', 0.2, 0.05);
+        }
+    });
+}
+
+function update() {
+    if (gameOver || !gameStarted) return;
+
+    if (moveLeft && player.x > 0) player.x -= player.speed;
+    if (moveRight && player.x < canvas.width - player.w) player.x += player.speed;
+
+    bullets.forEach((b, i) => {
+        b.y -= 12;
+        if (b.y < -20) bullets.splice(i, 1);
+    });
+
+    enemyBullets.forEach((eb, i) => {
+        eb.y += 6;
+        if (eb.y > canvas.height) enemyBullets.splice(i, 1);
+        if (eb.x < player.x + player.w && eb.x + eb.w > player.x &&
+            eb.y < player.y + player.h && eb.y + eb.h > player.y) {
+            enemyBullets.splice(i, 1);
+            takeDamage();
+        }
+    });
+
+    enemies.forEach((en, i) => {
+        if (en.state === 'descending') {
+            en.y += 3;
+            if (en.y >= en.targetY) en.state = 'strafing';
+        } else {
+            en.x += en.speedX;
+            if (en.x <= 0 || en.x >= canvas.width - en.w) en.speedX *= -1;
+        }
+
+        bullets.forEach((b, bi) => {
+            if (b.x < en.x + en.w && b.x + b.w > en.x && b.y < en.y + en.h && b.y + b.h > en.y) {
+                enemies.splice(i, 1);
+                bullets.splice(bi, 1);
+                score += 1;
+                scoreEl.innerText = score;
+                playSound(600, 'sine', 0.1);
+            }
+        });
+    });
+}
+
+function takeDamage() {
+    health--;
+    hpEl.innerText = health;
+    playSound(80, 'sawtooth', 0.3, 0.2);
+    if (health <= 0) {
+        gameOver = true;
+        alert("WIS RAMPUNG?? nembe mateni semono: " + score);
+        location.reload();
+    }
+}
+
+function draw() {
+    if (!gameStarted) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Gambar Player (Pake Gambar)
+    ctx.drawImage(playerImg, player.x, player.y, player.w, player.h);
+
+    // Gambar Musuh (Pake Gambar)
+    enemies.forEach(en => {
+        ctx.drawImage(enemyImg, en.x, en.y, en.w, en.h);
+    });
+
+    // Peluru Pemain (Glowing effect)
+    ctx.fillStyle = "#0ff";
+    bullets.forEach(b => ctx.fillRect(b.x, b.y, b.w, b.h));
+
+    // Peluru Musuh
+    ctx.fillStyle = "#f00";
+    enemyBullets.forEach(eb => ctx.fillRect(eb.x, eb.y, eb.w, eb.h));
+
+    update();
+    requestAnimationFrame(draw);
+}
+</script>
+</body>
+</html>
